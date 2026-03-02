@@ -1,73 +1,123 @@
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class HashTableFundamentals {
 
-    // productId -> stock count
-    private ConcurrentHashMap<String, AtomicInteger> inventory;
+    // DNS Entry class
+    class DNSEntry {
+        String ipAddress;
+        long expiryTime;
 
-    // productId -> waiting list (FIFO)
-    private ConcurrentHashMap<String, Queue<Integer>> waitingList;
+        DNSEntry(String ipAddress, long ttlSeconds) {
+            this.ipAddress = ipAddress;
+            this.expiryTime = System.currentTimeMillis() + ttlSeconds * 1000;
+        }
 
-    public HashTableFundamentals() {
-        inventory = new ConcurrentHashMap<>();
-        waitingList = new ConcurrentHashMap<>();
-
-        // preload product stock
-        inventory.put("IPHONE15_256GB", new AtomicInteger(100));
-        waitingList.put("IPHONE15_256GB", new LinkedList<>());
-    }
-
-    // instant stock check (O(1))
-    public int checkStock(String productId) {
-        AtomicInteger stock = inventory.get(productId);
-        return stock == null ? 0 : stock.get();
-    }
-
-    // purchase item (thread-safe)
-    public synchronized String purchaseItem(String productId, int userId) {
-
-        inventory.putIfAbsent(productId, new AtomicInteger(0));
-        waitingList.putIfAbsent(productId, new LinkedList<>());
-
-        AtomicInteger stock = inventory.get(productId);
-
-        if (stock.get() > 0) {
-            int remaining = stock.decrementAndGet();
-            return "Success! User " + userId +
-                    " purchased item. Remaining stock: " + remaining;
-        } else {
-            Queue<Integer> queue = waitingList.get(productId);
-            queue.add(userId);
-            return "Out of stock. User " + userId +
-                    " added to waiting list. Position: " + queue.size();
+        boolean isExpired() {
+            return System.currentTimeMillis() > expiryTime;
         }
     }
 
-    // view waiting list
-    public void showWaitingList(String productId) {
-        Queue<Integer> queue = waitingList.get(productId);
-        System.out.println("Waiting List: " + queue);
+    // LRU Cache using LinkedHashMap
+    private LinkedHashMap<String, DNSEntry> cache;
+    private int capacity;
+
+    private int hits = 0;
+    private int misses = 0;
+
+    public HashTableFundamentals(int capacity) {
+        this.capacity = capacity;
+
+        cache = new LinkedHashMap<String, DNSEntry>(capacity, 0.75f, true) {
+            protected boolean removeEldestEntry(Map.Entry<String, DNSEntry> eldest) {
+                return size() > HashTableFundamentals.this.capacity;
+            }
+        };
+
+        startCleanupThread();
     }
 
-    // demo simulation
-    public static void main(String[] args) {
+    // resolve domain
+    public synchronized String resolve(String domain) {
 
-        HashTableFundamentals system = new HashTableFundamentals();
+        if (cache.containsKey(domain)) {
+            DNSEntry entry = cache.get(domain);
 
-        System.out.println("Stock: " + system.checkStock("IPHONE15_256GB"));
-
-        System.out.println(system.purchaseItem("IPHONE15_256GB", 12345));
-        System.out.println(system.purchaseItem("IPHONE15_256GB", 67890));
-
-        // simulate stock finishing quickly
-        for (int i = 1; i <= 100; i++) {
-            system.purchaseItem("IPHONE15_256GB", i);
+            if (!entry.isExpired()) {
+                hits++;
+                return "Cache HIT → " + entry.ipAddress;
+            } else {
+                cache.remove(domain);
+            }
         }
 
-        System.out.println(system.purchaseItem("IPHONE15_256GB", 99999));
+        misses++;
 
-        system.showWaitingList("IPHONE15_256GB");
+        // simulate upstream DNS query
+        String ip = queryUpstreamDNS(domain);
+
+        // store with TTL = 5 seconds (demo)
+        cache.put(domain, new DNSEntry(ip, 5));
+
+        return "Cache MISS → Fetched IP: " + ip;
+    }
+
+    // simulate upstream DNS
+    private String queryUpstreamDNS(String domain) {
+        Random rand = new Random();
+        return "172.217.14." + rand.nextInt(255);
+    }
+
+    // background thread to clean expired entries
+    private void startCleanupThread() {
+        Thread cleaner = new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(3000);
+                    cleanExpiredEntries();
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        });
+        cleaner.setDaemon(true);
+        cleaner.start();
+    }
+
+    private synchronized void cleanExpiredEntries() {
+        Iterator<Map.Entry<String, DNSEntry>> it = cache.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, DNSEntry> entry = it.next();
+            if (entry.getValue().isExpired()) {
+                it.remove();
+            }
+        }
+    }
+
+    public void getCacheStats() {
+        int total = hits + misses;
+        double hitRate = total == 0 ? 0 : (hits * 100.0) / total;
+
+        System.out.println("Hits: " + hits);
+        System.out.println("Misses: " + misses);
+        System.out.printf("Hit Rate: %.2f%%\n", hitRate);
+    }
+
+    // demo
+    public static void main(String[] args) throws InterruptedException {
+
+        HashTableFundamentals dnsCache = new HashTableFundamentals(3);
+
+        System.out.println(dnsCache.resolve("google.com"));
+        System.out.println(dnsCache.resolve("google.com")); // hit
+
+        Thread.sleep(6000); // wait for TTL expiry
+
+        System.out.println(dnsCache.resolve("google.com")); // expired
+
+        dnsCache.resolve("facebook.com");
+        dnsCache.resolve("amazon.com");
+        dnsCache.resolve("openai.com"); // triggers LRU eviction
+
+        dnsCache.getCacheStats();
     }
 }

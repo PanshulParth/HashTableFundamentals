@@ -2,92 +2,87 @@ import java.util.*;
 
 public class HashTableFundamentals {
 
-    // n-gram -> set of document names
-    private HashMap<String, Set<String>> index;
+    // page -> total visits
+    private HashMap<String, Integer> pageViews;
 
-    private int N = 5; // 5-gram (recommended)
+    // page -> unique visitors
+    private HashMap<String, HashSet<String>> uniqueVisitors;
+
+    // traffic source -> count
+    private HashMap<String, Integer> trafficSources;
 
     public HashTableFundamentals() {
-        index = new HashMap<>();
+        pageViews = new HashMap<>();
+        uniqueVisitors = new HashMap<>();
+        trafficSources = new HashMap<>();
     }
 
-    // create n-grams from document text
-    private List<String> generateNGrams(String text) {
-        List<String> ngrams = new ArrayList<>();
-        String[] words = text.toLowerCase().replaceAll("[^a-z0-9 ]", "").split("\\s+");
+    // process page view event
+    public void processEvent(String pageUrl, String userId, String source) {
 
-        for (int i = 0; i <= words.length - N; i++) {
-            StringBuilder gram = new StringBuilder();
-            for (int j = 0; j < N; j++) {
-                gram.append(words[i + j]).append(" ");
-            }
-            ngrams.add(gram.toString().trim());
-        }
-        return ngrams;
+        // count page views
+        pageViews.put(pageUrl, pageViews.getOrDefault(pageUrl, 0) + 1);
+
+        // track unique visitors
+        uniqueVisitors.putIfAbsent(pageUrl, new HashSet<>());
+        uniqueVisitors.get(pageUrl).add(userId);
+
+        // track traffic source
+        trafficSources.put(source, trafficSources.getOrDefault(source, 0) + 1);
     }
 
-    // add document to database
-    public void addDocument(String docName, String text) {
-        List<String> grams = generateNGrams(text);
+    // get top N pages
+    public List<String> getTopPages(int n) {
+        PriorityQueue<Map.Entry<String, Integer>> pq =
+                new PriorityQueue<>((a, b) -> b.getValue() - a.getValue());
 
-        for (String gram : grams) {
-            index.putIfAbsent(gram, new HashSet<>());
-            index.get(gram).add(docName);
+        pq.addAll(pageViews.entrySet());
+
+        List<String> result = new ArrayList<>();
+
+        int rank = 1;
+        while (rank <= n && !pq.isEmpty()) {
+            Map.Entry<String, Integer> entry = pq.poll();
+            String page = entry.getKey();
+            int views = entry.getValue();
+            int unique = uniqueVisitors.get(page).size();
+
+            result.add(rank + ". " + page + " - " + views +
+                    " views (" + unique + " unique)");
+            rank++;
         }
+
+        return result;
     }
 
-    // analyze document similarity
-    public void analyzeDocument(String docName, String text) {
+    // display dashboard
+    public void getDashboard() {
 
-        List<String> grams = generateNGrams(text);
-        Map<String, Integer> matchCount = new HashMap<>();
+        System.out.println("\n=== REAL-TIME DASHBOARD ===");
 
-        for (String gram : grams) {
-            if (index.containsKey(gram)) {
-                for (String existingDoc : index.get(gram)) {
-                    if (!existingDoc.equals(docName)) {
-                        matchCount.put(existingDoc,
-                                matchCount.getOrDefault(existingDoc, 0) + 1);
-                    }
-                }
-            }
+        System.out.println("\nTop Pages:");
+        for (String page : getTopPages(10)) {
+            System.out.println(page);
         }
 
-        System.out.println("Extracted " + grams.size() + " n-grams");
-
-        for (String doc : matchCount.keySet()) {
-            int matches = matchCount.get(doc);
-            double similarity = (matches * 100.0) / grams.size();
-
-            System.out.println("Found " + matches +
-                    " matching n-grams with \"" + doc + "\"");
-
-            System.out.printf("Similarity: %.1f%%", similarity);
-
-            if (similarity > 30)
-                System.out.println("  → PLAGIARISM DETECTED");
-            else if (similarity > 10)
-                System.out.println("  → suspicious");
-            else
-                System.out.println("  → safe");
+        System.out.println("\nTraffic Sources:");
+        for (String src : trafficSources.keySet()) {
+            System.out.println(src + " : " + trafficSources.get(src));
         }
     }
 
     // demo
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
 
-        HashTableFundamentals detector = new HashTableFundamentals();
+        HashTableFundamentals dashboard = new HashTableFundamentals();
 
-        String doc1 = "Data structures and algorithms are important for computer science students.";
-        String doc2 = "Algorithms and data structures are essential topics in computer science.";
-        String doc3 = "Football is a popular sport played worldwide.";
+        dashboard.processEvent("/article/breaking-news", "user123", "google");
+        dashboard.processEvent("/article/breaking-news", "user456", "facebook");
+        dashboard.processEvent("/sports/championship", "user789", "google");
+        dashboard.processEvent("/article/breaking-news", "user123", "direct");
+        dashboard.processEvent("/sports/championship", "user111", "google");
+        dashboard.processEvent("/tech/ai-future", "user222", "twitter");
 
-        detector.addDocument("essay_089.txt", doc1);
-        detector.addDocument("essay_092.txt", doc2);
-        detector.addDocument("essay_200.txt", doc3);
-
-        String newDoc = "Data structures and algorithms are essential for computer science.";
-
-        detector.analyzeDocument("essay_123.txt", newDoc);
+        dashboard.getDashboard();
     }
 }

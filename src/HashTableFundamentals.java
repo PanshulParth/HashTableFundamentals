@@ -2,88 +2,111 @@ import java.util.*;
 
 public class HashTableFundamentals {
 
-    // Trie Node
-    class TrieNode {
-        HashMap<Character, TrieNode> children = new HashMap<>();
-        boolean isEnd = false;
-    }
+    class ParkingSpot {
+        String licensePlate;
+        long entryTime;
+        boolean occupied;
 
-    private TrieNode root;
-
-    // query -> frequency
-    private HashMap<String, Integer> frequencyMap;
-
-    public HashTableFundamentals() {
-        root = new TrieNode();
-        frequencyMap = new HashMap<>();
-    }
-
-    // insert query into trie
-    public void insert(String query) {
-        TrieNode node = root;
-
-        for (char ch : query.toCharArray()) {
-            node.children.putIfAbsent(ch, new TrieNode());
-            node = node.children.get(ch);
+        ParkingSpot() {
+            occupied = false;
         }
-        node.isEnd = true;
-
-        frequencyMap.put(query, frequencyMap.getOrDefault(query, 0) + 1);
     }
 
-    // update frequency when searched again
-    public void updateFrequency(String query) {
-        insert(query);
+    private ParkingSpot[] table;
+    private int capacity;
+    private int occupiedSpots;
+    private int totalProbes;
+
+    public HashTableFundamentals(int capacity) {
+        this.capacity = capacity;
+        table = new ParkingSpot[capacity];
+        for (int i = 0; i < capacity; i++) {
+            table[i] = new ParkingSpot();
+        }
     }
 
-    // search suggestions
-    public List<String> search(String prefix) {
-        TrieNode node = root;
+    // hash function
+    private int hash(String plate) {
+        return Math.abs(plate.hashCode()) % capacity;
+    }
 
-        for (char ch : prefix.toCharArray()) {
-            if (!node.children.containsKey(ch))
-                return new ArrayList<>();
-            node = node.children.get(ch);
+    // park vehicle using linear probing
+    public void parkVehicle(String plate) {
+        int index = hash(plate);
+        int probes = 0;
+
+        while (table[index].occupied) {
+            index = (index + 1) % capacity;
+            probes++;
         }
 
-        List<String> results = new ArrayList<>();
-        dfs(node, prefix, results);
+        table[index].licensePlate = plate;
+        table[index].entryTime = System.currentTimeMillis();
+        table[index].occupied = true;
 
-        // sort by frequency descending
-        results.sort((a, b) -> frequencyMap.get(b) - frequencyMap.get(a));
+        occupiedSpots++;
+        totalProbes += probes;
 
-        return results.size() > 10 ? results.subList(0, 10) : results;
+        System.out.println("Assigned spot #" + index + " (" + probes + " probes)");
     }
 
-    // DFS to collect words
-    private void dfs(TrieNode node, String word, List<String> results) {
-        if (node.isEnd)
-            results.add(word);
+    // exit vehicle and compute fee
+    public void exitVehicle(String plate) {
+        int index = hash(plate);
 
-        for (char ch : node.children.keySet()) {
-            dfs(node.children.get(ch), word + ch, results);
+        while (table[index].occupied) {
+            if (table[index].licensePlate.equals(plate)) {
+
+                long durationMillis = System.currentTimeMillis() - table[index].entryTime;
+                double hours = durationMillis / (1000.0 * 60 * 60);
+
+                double fee = Math.max(2.0, hours * 5); // $5 per hour, min $2
+
+                table[index].occupied = false;
+                occupiedSpots--;
+
+                System.out.printf("Spot #%d freed. Duration: %.2f hrs, Fee: $%.2f\n",
+                        index, hours, fee);
+                return;
+            }
+            index = (index + 1) % capacity;
         }
+
+        System.out.println("Vehicle not found.");
+    }
+
+    // find nearest available spot from entrance (spot 0)
+    public int nearestAvailableSpot() {
+        for (int i = 0; i < capacity; i++) {
+            if (!table[i].occupied) return i;
+        }
+        return -1;
+    }
+
+    // statistics
+    public void getStatistics() {
+        double occupancy = (occupiedSpots * 100.0) / capacity;
+        double avgProbes = occupiedSpots == 0 ? 0 : (double) totalProbes / occupiedSpots;
+
+        System.out.println("Occupancy: " + occupancy + "%");
+        System.out.println("Average Probes: " + avgProbes);
     }
 
     // demo
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
 
-        HashTableFundamentals auto = new HashTableFundamentals();
+        HashTableFundamentals parking = new HashTableFundamentals(10);
 
-        auto.insert("java tutorial");
-        auto.insert("java tutorial");
-        auto.insert("javascript");
-        auto.insert("java download");
-        auto.insert("java stream api");
-        auto.insert("java interview questions");
+        parking.parkVehicle("ABC1234");
+        parking.parkVehicle("XYZ9999");
+        parking.parkVehicle("CAR5678");
 
-        auto.updateFrequency("java tutorial");
+        Thread.sleep(2000);
 
-        System.out.println("Suggestions for 'jav':");
-        List<String> suggestions = auto.search("jav");
+        parking.exitVehicle("ABC1234");
 
-        for (String s : suggestions) {
-            System.out.println(s);
-        }
+        System.out.println("Nearest free spot: " + parking.nearestAvailableSpot());
+
+        parking.getStatistics();
     }
 }

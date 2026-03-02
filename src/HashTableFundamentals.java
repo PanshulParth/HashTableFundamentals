@@ -1,98 +1,89 @@
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 
 public class HashTableFundamentals {
 
-    // Token bucket for each client
-    class TokenBucket {
-        int tokens;
-        final int maxTokens;
-        final int refillRate; // tokens per second
-        long lastRefillTime;
-
-        TokenBucket(int maxTokens, int refillRate) {
-            this.maxTokens = maxTokens;
-            this.refillRate = refillRate;
-            this.tokens = maxTokens;
-            this.lastRefillTime = System.currentTimeMillis();
-        }
-
-        synchronized boolean allowRequest() {
-            refill();
-
-            if (tokens > 0) {
-                tokens--;
-                return true;
-            }
-            return false;
-        }
-
-        private void refill() {
-            long now = System.currentTimeMillis();
-            long secondsPassed = (now - lastRefillTime) / 1000;
-
-            if (secondsPassed > 0) {
-                int tokensToAdd = (int) secondsPassed * refillRate;
-                tokens = Math.min(maxTokens, tokens + tokensToAdd);
-                lastRefillTime = now;
-            }
-        }
-
-        int getTokens() {
-            refill();
-            return tokens;
-        }
+    // Trie Node
+    class TrieNode {
+        HashMap<Character, TrieNode> children = new HashMap<>();
+        boolean isEnd = false;
     }
 
-    private ConcurrentHashMap<String, TokenBucket> clients;
+    private TrieNode root;
 
-    private final int MAX_REQUESTS = 1000;  // capacity
-    private final int REFILL_RATE = 1000;   // tokens per second
+    // query -> frequency
+    private HashMap<String, Integer> frequencyMap;
 
     public HashTableFundamentals() {
-        clients = new ConcurrentHashMap<>();
+        root = new TrieNode();
+        frequencyMap = new HashMap<>();
     }
 
-    // rate limit check
-    public String checkRateLimit(String clientId) {
+    // insert query into trie
+    public void insert(String query) {
+        TrieNode node = root;
 
-        clients.putIfAbsent(clientId,
-                new TokenBucket(MAX_REQUESTS, REFILL_RATE));
-
-        TokenBucket bucket = clients.get(clientId);
-
-        if (bucket.allowRequest()) {
-            return "Allowed (" + bucket.getTokens() + " requests remaining)";
-        } else {
-            return "Denied — Rate limit exceeded. Try later.";
+        for (char ch : query.toCharArray()) {
+            node.children.putIfAbsent(ch, new TrieNode());
+            node = node.children.get(ch);
         }
+        node.isEnd = true;
+
+        frequencyMap.put(query, frequencyMap.getOrDefault(query, 0) + 1);
     }
 
-    // status info
-    public String getRateLimitStatus(String clientId) {
-        TokenBucket bucket = clients.get(clientId);
+    // update frequency when searched again
+    public void updateFrequency(String query) {
+        insert(query);
+    }
 
-        if (bucket == null) return "Client not found";
+    // search suggestions
+    public List<String> search(String prefix) {
+        TrieNode node = root;
 
-        return "{used: " + (MAX_REQUESTS - bucket.getTokens()) +
-                ", limit: " + MAX_REQUESTS +
-                ", remaining: " + bucket.getTokens() + "}";
+        for (char ch : prefix.toCharArray()) {
+            if (!node.children.containsKey(ch))
+                return new ArrayList<>();
+            node = node.children.get(ch);
+        }
+
+        List<String> results = new ArrayList<>();
+        dfs(node, prefix, results);
+
+        // sort by frequency descending
+        results.sort((a, b) -> frequencyMap.get(b) - frequencyMap.get(a));
+
+        return results.size() > 10 ? results.subList(0, 10) : results;
+    }
+
+    // DFS to collect words
+    private void dfs(TrieNode node, String word, List<String> results) {
+        if (node.isEnd)
+            results.add(word);
+
+        for (char ch : node.children.keySet()) {
+            dfs(node.children.get(ch), word + ch, results);
+        }
     }
 
     // demo
     public static void main(String[] args) {
 
-        HashTableFundamentals limiter = new HashTableFundamentals();
+        HashTableFundamentals auto = new HashTableFundamentals();
 
-        System.out.println(limiter.checkRateLimit("abc123"));
-        System.out.println(limiter.checkRateLimit("abc123"));
-        System.out.println(limiter.checkRateLimit("abc123"));
+        auto.insert("java tutorial");
+        auto.insert("java tutorial");
+        auto.insert("javascript");
+        auto.insert("java download");
+        auto.insert("java stream api");
+        auto.insert("java interview questions");
 
-        // simulate many requests
-        for (int i = 0; i < 1000; i++) {
-            limiter.checkRateLimit("abc123");
+        auto.updateFrequency("java tutorial");
+
+        System.out.println("Suggestions for 'jav':");
+        List<String> suggestions = auto.search("jav");
+
+        for (String s : suggestions) {
+            System.out.println(s);
         }
-
-        System.out.println(limiter.checkRateLimit("abc123")); // denied
-        System.out.println(limiter.getRateLimitStatus("abc123"));
     }
 }

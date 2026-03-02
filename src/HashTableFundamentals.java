@@ -2,111 +2,119 @@ import java.util.*;
 
 public class HashTableFundamentals {
 
-    class ParkingSpot {
-        String licensePlate;
-        long entryTime;
-        boolean occupied;
+    static class Transaction {
+        int id;
+        int amount;
+        String merchant;
+        String account;
+        long time; // minutes since start of day
 
-        ParkingSpot() {
-            occupied = false;
+        Transaction(int id, int amount, String merchant, String account, long time) {
+            this.id = id;
+            this.amount = amount;
+            this.merchant = merchant;
+            this.account = account;
+            this.time = time;
         }
     }
 
-    private ParkingSpot[] table;
-    private int capacity;
-    private int occupiedSpots;
-    private int totalProbes;
+    private List<Transaction> transactions = new ArrayList<>();
 
-    public HashTableFundamentals(int capacity) {
-        this.capacity = capacity;
-        table = new ParkingSpot[capacity];
-        for (int i = 0; i < capacity; i++) {
-            table[i] = new ParkingSpot();
-        }
+    public void addTransaction(Transaction t) {
+        transactions.add(t);
     }
 
-    // hash function
-    private int hash(String plate) {
-        return Math.abs(plate.hashCode()) % capacity;
-    }
+    // Classic Two Sum
+    public void findTwoSum(int target) {
+        HashMap<Integer, Transaction> map = new HashMap<>();
 
-    // park vehicle using linear probing
-    public void parkVehicle(String plate) {
-        int index = hash(plate);
-        int probes = 0;
+        for (Transaction t : transactions) {
+            int complement = target - t.amount;
 
-        while (table[index].occupied) {
-            index = (index + 1) % capacity;
-            probes++;
-        }
-
-        table[index].licensePlate = plate;
-        table[index].entryTime = System.currentTimeMillis();
-        table[index].occupied = true;
-
-        occupiedSpots++;
-        totalProbes += probes;
-
-        System.out.println("Assigned spot #" + index + " (" + probes + " probes)");
-    }
-
-    // exit vehicle and compute fee
-    public void exitVehicle(String plate) {
-        int index = hash(plate);
-
-        while (table[index].occupied) {
-            if (table[index].licensePlate.equals(plate)) {
-
-                long durationMillis = System.currentTimeMillis() - table[index].entryTime;
-                double hours = durationMillis / (1000.0 * 60 * 60);
-
-                double fee = Math.max(2.0, hours * 5); // $5 per hour, min $2
-
-                table[index].occupied = false;
-                occupiedSpots--;
-
-                System.out.printf("Spot #%d freed. Duration: %.2f hrs, Fee: $%.2f\n",
-                        index, hours, fee);
-                return;
+            if (map.containsKey(complement)) {
+                System.out.println("Two-Sum Found: " +
+                        map.get(complement).id + " & " + t.id);
             }
-            index = (index + 1) % capacity;
+            map.put(t.amount, t);
         }
-
-        System.out.println("Vehicle not found.");
     }
 
-    // find nearest available spot from entrance (spot 0)
-    public int nearestAvailableSpot() {
-        for (int i = 0; i < capacity; i++) {
-            if (!table[i].occupied) return i;
+    // Two Sum within 1 hour window
+    public void findTwoSumWithinHour(int target) {
+        HashMap<Integer, Transaction> map = new HashMap<>();
+
+        for (Transaction t : transactions) {
+            int complement = target - t.amount;
+
+            if (map.containsKey(complement)) {
+                Transaction prev = map.get(complement);
+
+                if (Math.abs(t.time - prev.time) <= 60) {
+                    System.out.println("Within 1hr: " + prev.id + " & " + t.id);
+                }
+            }
+            map.put(t.amount, t);
         }
-        return -1;
     }
 
-    // statistics
-    public void getStatistics() {
-        double occupancy = (occupiedSpots * 100.0) / capacity;
-        double avgProbes = occupiedSpots == 0 ? 0 : (double) totalProbes / occupiedSpots;
+    // Detect duplicate payments (same amount + merchant, diff accounts)
+    public void detectDuplicates() {
+        HashMap<String, Set<String>> map = new HashMap<>();
 
-        System.out.println("Occupancy: " + occupancy + "%");
-        System.out.println("Average Probes: " + avgProbes);
+        for (Transaction t : transactions) {
+            String key = t.amount + "-" + t.merchant;
+
+            map.putIfAbsent(key, new HashSet<>());
+            map.get(key).add(t.account);
+        }
+
+        for (String key : map.keySet()) {
+            if (map.get(key).size() > 1) {
+                System.out.println("Duplicate payment pattern: " + key +
+                        " accounts: " + map.get(key));
+            }
+        }
+    }
+
+    // K-Sum (find any K transactions = target)
+    public void findKSum(int k, int target) {
+        List<Integer> amounts = new ArrayList<>();
+        for (Transaction t : transactions) amounts.add(t.amount);
+
+        List<Integer> result = new ArrayList<>();
+        kSumHelper(amounts, k, target, 0, result);
+    }
+
+    private void kSumHelper(List<Integer> nums, int k, int target,
+                            int start, List<Integer> result) {
+
+        if (k == 0 && target == 0) {
+            System.out.println("K-Sum Found: " + result);
+            return;
+        }
+
+        if (k == 0 || target < 0) return;
+
+        for (int i = start; i < nums.size(); i++) {
+            result.add(nums.get(i));
+            kSumHelper(nums, k - 1, target - nums.get(i), i + 1, result);
+            result.remove(result.size() - 1);
+        }
     }
 
     // demo
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) {
 
-        HashTableFundamentals parking = new HashTableFundamentals(10);
+        HashTableFundamentals system = new HashTableFundamentals();
 
-        parking.parkVehicle("ABC1234");
-        parking.parkVehicle("XYZ9999");
-        parking.parkVehicle("CAR5678");
+        system.addTransaction(new Transaction(1, 500, "StoreA", "acc1", 600));
+        system.addTransaction(new Transaction(2, 300, "StoreB", "acc2", 615));
+        system.addTransaction(new Transaction(3, 200, "StoreC", "acc3", 630));
+        system.addTransaction(new Transaction(4, 500, "StoreA", "acc4", 640));
 
-        Thread.sleep(2000);
-
-        parking.exitVehicle("ABC1234");
-
-        System.out.println("Nearest free spot: " + parking.nearestAvailableSpot());
-
-        parking.getStatistics();
+        system.findTwoSum(500);
+        system.findTwoSumWithinHour(500);
+        system.detectDuplicates();
+        system.findKSum(3, 1000);
     }
 }

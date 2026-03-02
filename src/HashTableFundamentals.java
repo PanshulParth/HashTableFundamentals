@@ -1,88 +1,98 @@
-import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class HashTableFundamentals {
 
-    // page -> total visits
-    private HashMap<String, Integer> pageViews;
+    // Token bucket for each client
+    class TokenBucket {
+        int tokens;
+        final int maxTokens;
+        final int refillRate; // tokens per second
+        long lastRefillTime;
 
-    // page -> unique visitors
-    private HashMap<String, HashSet<String>> uniqueVisitors;
+        TokenBucket(int maxTokens, int refillRate) {
+            this.maxTokens = maxTokens;
+            this.refillRate = refillRate;
+            this.tokens = maxTokens;
+            this.lastRefillTime = System.currentTimeMillis();
+        }
 
-    // traffic source -> count
-    private HashMap<String, Integer> trafficSources;
+        synchronized boolean allowRequest() {
+            refill();
+
+            if (tokens > 0) {
+                tokens--;
+                return true;
+            }
+            return false;
+        }
+
+        private void refill() {
+            long now = System.currentTimeMillis();
+            long secondsPassed = (now - lastRefillTime) / 1000;
+
+            if (secondsPassed > 0) {
+                int tokensToAdd = (int) secondsPassed * refillRate;
+                tokens = Math.min(maxTokens, tokens + tokensToAdd);
+                lastRefillTime = now;
+            }
+        }
+
+        int getTokens() {
+            refill();
+            return tokens;
+        }
+    }
+
+    private ConcurrentHashMap<String, TokenBucket> clients;
+
+    private final int MAX_REQUESTS = 1000;  // capacity
+    private final int REFILL_RATE = 1000;   // tokens per second
 
     public HashTableFundamentals() {
-        pageViews = new HashMap<>();
-        uniqueVisitors = new HashMap<>();
-        trafficSources = new HashMap<>();
+        clients = new ConcurrentHashMap<>();
     }
 
-    // process page view event
-    public void processEvent(String pageUrl, String userId, String source) {
+    // rate limit check
+    public String checkRateLimit(String clientId) {
 
-        // count page views
-        pageViews.put(pageUrl, pageViews.getOrDefault(pageUrl, 0) + 1);
+        clients.putIfAbsent(clientId,
+                new TokenBucket(MAX_REQUESTS, REFILL_RATE));
 
-        // track unique visitors
-        uniqueVisitors.putIfAbsent(pageUrl, new HashSet<>());
-        uniqueVisitors.get(pageUrl).add(userId);
+        TokenBucket bucket = clients.get(clientId);
 
-        // track traffic source
-        trafficSources.put(source, trafficSources.getOrDefault(source, 0) + 1);
+        if (bucket.allowRequest()) {
+            return "Allowed (" + bucket.getTokens() + " requests remaining)";
+        } else {
+            return "Denied — Rate limit exceeded. Try later.";
+        }
     }
 
-    // get top N pages
-    public List<String> getTopPages(int n) {
-        PriorityQueue<Map.Entry<String, Integer>> pq =
-                new PriorityQueue<>((a, b) -> b.getValue() - a.getValue());
+    // status info
+    public String getRateLimitStatus(String clientId) {
+        TokenBucket bucket = clients.get(clientId);
 
-        pq.addAll(pageViews.entrySet());
+        if (bucket == null) return "Client not found";
 
-        List<String> result = new ArrayList<>();
-
-        int rank = 1;
-        while (rank <= n && !pq.isEmpty()) {
-            Map.Entry<String, Integer> entry = pq.poll();
-            String page = entry.getKey();
-            int views = entry.getValue();
-            int unique = uniqueVisitors.get(page).size();
-
-            result.add(rank + ". " + page + " - " + views +
-                    " views (" + unique + " unique)");
-            rank++;
-        }
-
-        return result;
-    }
-
-    // display dashboard
-    public void getDashboard() {
-
-        System.out.println("\n=== REAL-TIME DASHBOARD ===");
-
-        System.out.println("\nTop Pages:");
-        for (String page : getTopPages(10)) {
-            System.out.println(page);
-        }
-
-        System.out.println("\nTraffic Sources:");
-        for (String src : trafficSources.keySet()) {
-            System.out.println(src + " : " + trafficSources.get(src));
-        }
+        return "{used: " + (MAX_REQUESTS - bucket.getTokens()) +
+                ", limit: " + MAX_REQUESTS +
+                ", remaining: " + bucket.getTokens() + "}";
     }
 
     // demo
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) {
 
-        HashTableFundamentals dashboard = new HashTableFundamentals();
+        HashTableFundamentals limiter = new HashTableFundamentals();
 
-        dashboard.processEvent("/article/breaking-news", "user123", "google");
-        dashboard.processEvent("/article/breaking-news", "user456", "facebook");
-        dashboard.processEvent("/sports/championship", "user789", "google");
-        dashboard.processEvent("/article/breaking-news", "user123", "direct");
-        dashboard.processEvent("/sports/championship", "user111", "google");
-        dashboard.processEvent("/tech/ai-future", "user222", "twitter");
+        System.out.println(limiter.checkRateLimit("abc123"));
+        System.out.println(limiter.checkRateLimit("abc123"));
+        System.out.println(limiter.checkRateLimit("abc123"));
 
-        dashboard.getDashboard();
+        // simulate many requests
+        for (int i = 0; i < 1000; i++) {
+            limiter.checkRateLimit("abc123");
+        }
+
+        System.out.println(limiter.checkRateLimit("abc123")); // denied
+        System.out.println(limiter.getRateLimitStatus("abc123"));
     }
 }

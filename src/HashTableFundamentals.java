@@ -1,91 +1,73 @@
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class HashTableFundamentals {
-    // Stores username -> userId
-    private HashMap<String, Integer> users;
 
-    // Tracks how many times usernames were attempted
-    private HashMap<String, Integer> attempts;
+    // productId -> stock count
+    private ConcurrentHashMap<String, AtomicInteger> inventory;
 
-    private int userIdCounter;
+    // productId -> waiting list (FIFO)
+    private ConcurrentHashMap<String, Queue<Integer>> waitingList;
 
     public HashTableFundamentals() {
-        users = new HashMap<>();
-        attempts = new HashMap<>();
-        userIdCounter = 1;
+        inventory = new ConcurrentHashMap<>();
+        waitingList = new ConcurrentHashMap<>();
 
-        // preloaded users (simulate existing database)
-        users.put("john_doe", userIdCounter++);
-        users.put("admin", userIdCounter++);
-        users.put("thor", userIdCounter++);
+        // preload product stock
+        inventory.put("IPHONE15_256GB", new AtomicInteger(100));
+        waitingList.put("IPHONE15_256GB", new LinkedList<>());
     }
 
-    // O(1) username check
-    public boolean checkAvailability(String username) {
-        trackAttempt(username);
-        return !users.containsKey(username);
+    // instant stock check (O(1))
+    public int checkStock(String productId) {
+        AtomicInteger stock = inventory.get(productId);
+        return stock == null ? 0 : stock.get();
     }
 
-    // register username
-    public void registerUser(String username) {
-        if (checkAvailability(username)) {
-            users.put(username, userIdCounter++);
-            System.out.println(username + " registered successfully.");
+    // purchase item (thread-safe)
+    public synchronized String purchaseItem(String productId, int userId) {
+
+        inventory.putIfAbsent(productId, new AtomicInteger(0));
+        waitingList.putIfAbsent(productId, new LinkedList<>());
+
+        AtomicInteger stock = inventory.get(productId);
+
+        if (stock.get() > 0) {
+            int remaining = stock.decrementAndGet();
+            return "Success! User " + userId +
+                    " purchased item. Remaining stock: " + remaining;
         } else {
-            System.out.println(username + " is already taken.");
+            Queue<Integer> queue = waitingList.get(productId);
+            queue.add(userId);
+            return "Out of stock. User " + userId +
+                    " added to waiting list. Position: " + queue.size();
         }
     }
 
-    // track popularity
-    private void trackAttempt(String username) {
-        attempts.put(username, attempts.getOrDefault(username, 0) + 1);
+    // view waiting list
+    public void showWaitingList(String productId) {
+        Queue<Integer> queue = waitingList.get(productId);
+        System.out.println("Waiting List: " + queue);
     }
 
-    // suggest alternatives
-    public List<String> suggestAlternatives(String username) {
-        List<String> suggestions = new ArrayList<>();
-
-        if (!users.containsKey(username)) {
-            suggestions.add(username);
-            return suggestions;
-        }
-
-        suggestions.add(username + "1");
-        suggestions.add(username + "2");
-        suggestions.add(username + "_official");
-        suggestions.add(username.replace("_", "."));
-
-        return suggestions;
-    }
-
-    // most attempted username
-    public String getMostAttempted() {
-        String popular = "";
-        int max = 0;
-
-        for (String name : attempts.keySet()) {
-            if (attempts.get(name) > max) {
-                max = attempts.get(name);
-                popular = name;
-            }
-        }
-        return popular + " (" + max + " attempts)";
-    }
-
-    // demo
+    // demo simulation
     public static void main(String[] args) {
 
         HashTableFundamentals system = new HashTableFundamentals();
 
-        System.out.println(system.checkAvailability("john_doe")); // false
-        System.out.println(system.checkAvailability("jane_smith")); // true
+        System.out.println("Stock: " + system.checkStock("IPHONE15_256GB"));
 
-        System.out.println(system.suggestAlternatives("john_doe"));
+        System.out.println(system.purchaseItem("IPHONE15_256GB", 12345));
+        System.out.println(system.purchaseItem("IPHONE15_256GB", 67890));
 
-        system.checkAvailability("admin");
-        system.checkAvailability("admin");
-        system.checkAvailability("admin");
+        // simulate stock finishing quickly
+        for (int i = 1; i <= 100; i++) {
+            system.purchaseItem("IPHONE15_256GB", i);
+        }
 
-        System.out.println(system.getMostAttempted());
+        System.out.println(system.purchaseItem("IPHONE15_256GB", 99999));
+
+        system.showWaitingList("IPHONE15_256GB");
     }
 }
